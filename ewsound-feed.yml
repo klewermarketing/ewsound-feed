@@ -1,0 +1,39 @@
+name: ewsound-feed
+on:
+  schedule:
+    - cron: "0 3 * * *"   # 05:00 Tallinna talveajas (UTC+2). Muuda vastavalt EW Soundi feedi valmimisajale.
+  workflow_dispatch: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install playwright && playwright install --with-deps chromium
+      - name: Taasta eelmised pildid (et renderdada ainult muutunud tooted)
+        uses: actions/cache/restore@v4
+        with:
+          path: out/images
+          key: images-${{ github.run_id }}
+          restore-keys: images-
+      - name: Ehita feed ja pildid
+        run: python3 -u build_feed.py --out out --base-url "${{ vars.BASE_URL }}"
+      - name: Salvesta pildid vahemällu (ka siis, kui järgmine samm ebaõnnestub)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: out/images
+          key: images-${{ github.run_id }}
+      - name: Lae R2-sse (ainult uued pildid, siis feed)
+        run: |
+          set -e
+          sudo apt-get install -y rclone
+          export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+          export RCLONE_CONFIG_R2_REGION=auto RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
+          export RCLONE_CONFIG_R2_ACCESS_KEY_ID="${{ secrets.R2_ACCESS_KEY_ID }}"
+          export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="${{ secrets.R2_SECRET_ACCESS_KEY }}"
+          export RCLONE_CONFIG_R2_ENDPOINT="${{ secrets.R2_ENDPOINT }}"
+          rclone copy out/images "R2:${{ vars.R2_BUCKET }}/images" --ignore-existing --transfers 16 -v --stats 60s
+          rclone copyto out/feed.csv "R2:${{ vars.R2_BUCKET }}/feed.csv" -v
