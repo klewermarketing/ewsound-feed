@@ -96,8 +96,12 @@ def local_data_uri(path):
 
 
 def b64font(fn):
-    with open(os.path.join(HERE, "fonts", fn), "rb") as f:
-        return base64.b64encode(f.read()).decode()
+    for d in (os.path.join(HERE, "fonts"), HERE):  # fondid kaustas fonts/ voi otse repo juures
+        path = os.path.join(d, fn)
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                return base64.b64encode(f.read()).decode()
+    raise SystemExit("Fonti ei leitud: " + fn)
 
 
 
